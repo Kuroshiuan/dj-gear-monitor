@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 import time
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ================== 設定區 ==================
 DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
@@ -20,7 +20,8 @@ MODELS = [
 ]
 
 SEEN_FILE = "seen_listings.json"
-CHECK_INTERVAL = 300  # GitHub Actions 每 5 分鐘執行一次，這裡保留供參考
+HEARTBEAT_FILE = "last_heartbeat.json"   # ← 新增：記錄上次心跳時間
+CHECK_INTERVAL = 600  # GitHub 每 10 分鐘跑一次，這裡僅供參考
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
@@ -34,28 +35,50 @@ if os.path.exists(SEEN_FILE):
 else:
     seen = {"yahoo": [], "mercari": [], "ebay": []}
 
+# 載入上次心跳時間（預設為 25 小時前，確保第一次執行會發心跳）
+if os.path.exists(HEARTBEAT_FILE):
+    with open(HEARTBEAT_FILE, "r", encoding="utf-8") as f:
+        last_heartbeat = datetime.fromisoformat(json.load(f)["last"])
+else:
+    last_heartbeat = datetime.utcnow() - timedelta(hours=25)
+
 def save_seen():
     with open(SEEN_FILE, "w", encoding="utf-8") as f:
         json.dump(seen, f, ensure_ascii=False, indent=2)
 
-def send_discord(title, price, url, site, model, posted_time="未知"):
-    embed = {
-        "content": f"🚨 **新刊登！** {model}",
-        "embeds": [{
-            "title": title,
-            "url": url,
-            "color": 0x00ff00,
-            "fields": [
-                {"name": "價格", "value": price, "inline": True},
-                {"name": "網站", "value": site, "inline": True},
-                {"name": "刊登時間", "value": posted_time, "inline": True}
-            ],
-            "timestamp": datetime.utcnow().isoformat()
-        }]
-    }
+def save_heartbeat():
+    with open(HEARTBEAT_FILE, "w", encoding="utf-8") as f:
+        json.dump({"last": datetime.utcnow().isoformat()}, f, ensure_ascii=False, indent=2)
+
+def send_discord(title, price, url, site, model, posted_time="未知", is_heartbeat=False):
+    if is_heartbeat:
+        embed = {
+            "content": "✅ **DJ 設備監控程式正常運作中**",
+            "embeds": [{
+                "title": "目前無新刊登",
+                "color": 0x00ccff,
+                "description": "已完成掃描，所有網站都沒有符合條件的新二手 DJ 設備。",
+                "timestamp": datetime.utcnow().isoformat()
+            }]
+        }
+    else:
+        embed = {
+            "content": f"🚨 **新刊登！** {model}",
+            "embeds": [{
+                "title": title,
+                "url": url,
+                "color": 0x00ff00,
+                "fields": [
+                    {"name": "價格", "value": price, "inline": True},
+                    {"name": "網站", "value": site, "inline": True},
+                    {"name": "刊登時間", "value": posted_time, "inline": True}
+                ],
+                "timestamp": datetime.utcnow().isoformat()
+            }]
+        }
     try:
         requests.post(DISCORD_WEBHOOK, json=embed, timeout=10)
-        print(f"✅ 已發送 Discord 通知：{title}")
+        print(f"✅ 已發送 Discord {'心跳' if is_heartbeat else '通知'}：{title if not is_heartbeat else '正常運作'}")
     except Exception as e:
         print(f"Discord 發送失敗: {e}")
 
@@ -128,6 +151,7 @@ def search_ebay(model):
 
 # ================== 主程式 ==================
 print(f"🎛️ DJ 設備監控程式啟動 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
 for model in MODELS:
     print(f"   搜尋 → {model}")
     search_yahoo(model)
@@ -136,4 +160,11 @@ for model in MODELS:
     time.sleep(3)
 
 print("掃描完成")
+
+# 檢查是否需要發心跳訊息（每 24 小時一次）
+if datetime.utcnow() - last_heartbeat > timedelta(hours=24):
+    send_discord("", "", "", "", "", is_heartbeat=True)
+    save_heartbeat()
+    print("❤️ 已發送 24 小時心跳訊息")
+
 save_seen()
