@@ -20,7 +20,7 @@ MODELS = [
 ]
 
 SEEN_FILE = "seen_listings.json"
-CHECK_INTERVAL = 600  # GitHub Actions 每 10 分鐘執行一次，這裡保留供參考
+CHECK_INTERVAL = 300  # GitHub Actions 每 5 分鐘執行一次，這裡保留供參考
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
